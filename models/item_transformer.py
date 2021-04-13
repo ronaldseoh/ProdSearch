@@ -22,28 +22,44 @@ from others.util import pad, load_pretrain_embeddings, load_user_item_embeddings
 class ItemTransformerRanker(nn.Module):
     def __init__(self, args, device, vocab_size, product_size, vocab_words, word_dists=None):
         super(ItemTransformerRanker, self).__init__()
+
         self.args = args
+
         self.device = device
+
         self.train_review_only = args.train_review_only
+
         self.embedding_size = args.embedding_size
+
         self.vocab_words = vocab_words
+
         self.word_dists = None
+
         if word_dists is not None:
             self.word_dists = torch.tensor(word_dists, device=device)
+
         self.prod_dists = torch.ones(product_size, device=device)
+
         self.prod_pad_idx = product_size
         self.word_pad_idx = vocab_size - 1
         self.seg_pad_idx = 3
+
         self.emb_dropout = args.dropout
+
         self.pretrain_emb_dir = None
+
         if os.path.exists(args.pretrain_emb_dir):
             self.pretrain_emb_dir = args.pretrain_emb_dir
+
         self.pretrain_up_emb_dir = None
+
         if os.path.exists(args.pretrain_up_emb_dir):
             self.pretrain_up_emb_dir = args.pretrain_up_emb_dir
+
         self.dropout_layer = nn.Dropout(p=args.dropout)
 
         self.product_emb = nn.Embedding(product_size+1, self.embedding_size, padding_idx=self.prod_pad_idx)
+
         if args.sep_prod_emb:
             self.hist_product_emb = nn.Embedding(product_size+1, self.embedding_size, padding_idx=self.prod_pad_idx)
         '''
@@ -53,6 +69,7 @@ class ItemTransformerRanker(nn.Module):
             pretrained_weights.append([0.] * len(pretrained_weights[0]))
             self.product_emb = nn.Embedding.from_pretrained(torch.FloatTensor(pretrained_weights), padding_idx=self.prod_pad_idx)
         '''
+
         self.product_bias = nn.Parameter(torch.zeros(product_size+1), requires_grad=True)
         self.word_bias = nn.Parameter(torch.zeros(vocab_size), requires_grad=True)
 
@@ -69,6 +86,7 @@ class ItemTransformerRanker(nn.Module):
         else:
             self.word_embeddings = nn.Embedding(
                 vocab_size, self.embedding_size, padding_idx=self.word_pad_idx)
+
         if self.args.model_name == "item_transformer":
             self.transformer_encoder = TransformerEncoder(
                     self.embedding_size, args.ff_size, args.heads,
@@ -81,14 +99,18 @@ class ItemTransformerRanker(nn.Module):
             self.query_encoder = FSEncoder(self.embedding_size, self.emb_dropout)
         else:
             self.query_encoder = AVGEncoder(self.embedding_size, self.emb_dropout)
+
         self.seg_embeddings = nn.Embedding(4, self.embedding_size, padding_idx=self.seg_pad_idx)
+
         #for each q,u,i
         #Q, previous purchases of u, current available reviews for i, padding value
         #self.logsoftmax = torch.nn.LogSoftmax(dim = -1)
         self.bce_logits_loss = torch.nn.BCEWithLogitsLoss(reduction='none')#by default it's mean
 
         self.initialize_parameters(logger) #logger
+
         self.to(device) #change model in place
+
         self.item_loss = 0
         self.ps_loss = 0
 
@@ -194,7 +216,6 @@ class ItemTransformerRanker(nn.Module):
             candi_scores += candi_bias
         return candi_scores
 
-
     def test_trans(self, batch_data):
         query_word_idxs = batch_data.query_word_idxs
         target_prod_idxs = batch_data.target_prod_idxs
@@ -286,30 +307,40 @@ class ItemTransformerRanker(nn.Module):
         query_word_idxs = batch_data.query_word_idxs
         target_prod_idxs = batch_data.target_prod_idxs
         u_item_idxs = batch_data.u_item_idxs
+ 
         batch_size, prev_item_count = u_item_idxs.size()
+
         neg_k = self.args.neg_per_pos
+
         pos_iword_idxs = batch_data.pos_iword_idxs
         neg_item_idxs = torch.multinomial(self.prod_dists, batch_size * neg_k, replacement=True)
         neg_item_idxs = neg_item_idxs.view(batch_size, -1)
+
         query_word_emb = self.word_embeddings(query_word_idxs)
         query_emb = self.query_encoder(query_word_emb, query_word_idxs.ne(self.word_pad_idx))
+
         column_mask = torch.ones(batch_size, 1, dtype=torch.uint8, device=query_word_idxs.device)
         u_item_mask = u_item_idxs.ne(self.prod_pad_idx)
         pos_item_seq_mask = torch.cat([column_mask, u_item_mask, column_mask], dim=1) #batch_size, 1+max_review_count
 
         pos_seg_idxs = torch.cat(
                 [column_mask*0, column_mask.expand(-1, prev_item_count), column_mask*2], dim=1)
+
         column_mask = column_mask.unsqueeze(1).expand(-1,neg_k,-1)
+
         neg_item_seq_mask = torch.cat([column_mask, u_item_mask.unsqueeze(1).expand(-1,neg_k,-1), column_mask], dim=2)
         neg_seg_idxs = torch.cat([column_mask*0,
             column_mask.expand(-1, -1, prev_item_count),
             column_mask*2], dim = 2)
+
         target_item_emb = self.product_emb(target_prod_idxs)
         neg_item_emb = self.product_emb(neg_item_idxs) #batch_size, neg_k, embedding_size
+
         if self.args.sep_prod_emb:
             u_item_emb = self.hist_product_emb(u_item_idxs)
         else:
             u_item_emb = self.product_emb(u_item_idxs)
+
         pos_sequence_emb = torch.cat([query_emb.unsqueeze(1), u_item_emb, target_item_emb.unsqueeze(1)], dim=1)
         pos_seg_emb = self.seg_embeddings(pos_seg_idxs.long())
         neg_sequence_emb = torch.cat(
@@ -327,22 +358,30 @@ class ItemTransformerRanker(nn.Module):
                 neg_sequence_emb.view(batch_size*neg_k, prev_item_count+2, -1),
                 neg_item_seq_mask.view(batch_size*neg_k, prev_item_count+2), use_pos=self.args.use_pos_emb, out_pos=out_pos)
         neg_scores = neg_scores.view(batch_size, neg_k)
+
         pos_weight = 1
+
         if self.args.pos_weight:
             pos_weight = self.args.neg_per_pos
+
         prod_mask = torch.cat([torch.ones(batch_size, 1, dtype=torch.uint8, device=query_word_idxs.device) * pos_weight,
                         torch.ones(batch_size, neg_k, dtype=torch.uint8, device=query_word_idxs.device)], dim=-1)
         prod_scores = torch.cat([pos_scores.unsqueeze(-1), neg_scores], dim=-1)
+
         target = torch.cat([torch.ones(batch_size, 1, device=query_word_idxs.device),
             torch.zeros(batch_size, neg_k, device=query_word_idxs.device)], dim=-1)
+
         #ps_loss = self.bce_logits_loss(prod_scores, target, weight=prod_mask.float())
         #for all positive items, there are neg_k negative items
         ps_loss = nn.functional.binary_cross_entropy_with_logits(
                 prod_scores, target,
                 weight=prod_mask.float(),
                 reduction='none')
+
         ps_loss = ps_loss.sum(-1).mean()
+
         item_loss = self.item_to_words(target_prod_idxs, pos_iword_idxs, self.args.neg_per_pos)
+
         self.ps_loss += ps_loss.item()
         self.item_loss += item_loss.item()
         #logger.info("ps_loss:{} item_loss:{}".format(, item_loss.item()))
