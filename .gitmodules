@@ -1,0 +1,6 @@
+[submodule "DREM"]
+	path = DREM
+	url = git@github.com:ronaldseoh/Explainable-Product-Search-with-a-Dynamic-Relation-Embedding-Model.git
+[submodule "GRACE"]
+	path = GRACE
+	url = git@github.com:ronaldseoh/GRACE.git
