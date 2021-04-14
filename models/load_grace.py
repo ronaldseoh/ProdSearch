@@ -109,3 +109,57 @@ def load_grace_tokenizer(bert_arch_name='bert-base-uncased',
         do_lower_case=do_lower_case)
     
     return tokenizer
+
+# Based on
+# https://github.com/ronaldseoh/GRACE/blob/ab32a79677ed6dd5dfcfb14aaa4d6422ff48675c/ate_asc_features.py#L94
+def encode_grace_input(tokenizer, texts):
+    
+    if type(texts) != list:
+        texts = [texts]
+    
+    input_ids_all = []
+    segment_ids_all = []
+    input_mask_all = []
+    label_mask_X_all = []
+    
+    for t in texts:
+        # Prepare 'input_ids'
+        tokens = []
+        
+        # Prepare 'token_type_ids' == 'segment_ids' as seen in ate_asc_run.py
+        segment_ids = []
+        
+        # Prepare 'attention_mask' == 'input_mask'
+        input_mask = []
+        
+        # Prepare 'label_mask_X'
+        label_mask_X = []
+        
+        # Start with [CLS] token
+        tokens.append('[CLS]')
+        
+        # Tokenize the input text
+        tokens += tokenizer.tokenize(t)
+        
+        for t in tokens:
+            segment_ids.append(0)
+            input_mask.append(1)
+            label_mask_X.append(0)
+            
+        # Convert tokens to ids
+        input_ids = tokenizer.convert_tokens_to_ids(tokens)
+        
+        # Convert all atrributes to PyTorch Tensors and add them to
+        # to the lists to be returned
+        input_ids_all.append(input_ids)
+        segment_ids_all.append(segment_ids)
+        input_mask_all.append(input_mask)
+        label_mask_X_all.append(label_mask_X)
+    
+    encoded = {
+        'input_ids': torch.tensor(input_ids_all),
+        'token_type_ids': torch.tensor(segment_ids_all),
+        'attention_mask': torch.tensor(input_mask_all),
+        'label_mask_X': torch.tensor(label_mask_X_all)}
+    
+    return encoded
