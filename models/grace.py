@@ -141,11 +141,15 @@ def encode_grace_input(tokenizer, texts):
         # Tokenize the input text
         tokens += tokenizer.tokenize(t)
         
+        # Add [SEP]
+        tokens.append('[CLS]')
+        
+        # Labels
         for t in tokens:
             segment_ids.append(0)
             input_mask.append(1)
             label_mask_X.append(0)
-            
+
         # Convert tokens to ids
         input_ids = tokenizer.convert_tokens_to_ids(tokens)
         
