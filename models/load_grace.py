@@ -6,6 +6,7 @@ import torch
 
 this_script_location = os.path.dirname(
     os.path.abspath(inspect.getfile(inspect.currentframe())))
+sys.path.append(os.path.join(this_script_location, '..'))
 sys.path.append(os.path.join(this_script_location, '..', 'GRACE'))
 
 from GRACE.ate_asc_run import init_model
