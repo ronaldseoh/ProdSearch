@@ -26,7 +26,8 @@ def load_grace_model(model_path, ate_or_asc='asc', bert_arch_name='bert-base-unc
 
     model_state_dict = torch.load(model_path, map_location='cpu')
     
-    if ate_or_asc == 'asc'
+    if ate_or_asc == 'asc':
+
         task_config = {
             "use_ghl": use_ghl,
             "use_vat": use_vat,
