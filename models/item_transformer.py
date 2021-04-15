@@ -58,11 +58,22 @@ class ItemTransformerRanker(nn.Module):
             self.pretrain_up_emb_dir = args.pretrain_up_emb_dir
 
         self.dropout_layer = nn.Dropout(p=args.dropout)
+        
+        if self.args.product_encoder_name == 'grace_ate':
+            self.grace_model = load_grace_model(
+                args.pretrain_grace_path, ate_or_asc='ate',
+                cache_dir=args.pretrain_grace_cache_dir)
+                
+        elif self.args.product_encoder_name == 'grace_asc':
+            self.grace_model = load_grace_model(
+                args.pretrain_grace_path, ate_or_asc='asc',
+                cache_dir=args.pretrain_grace_cache_dir)
 
-        self.product_emb = nn.Embedding(product_size+1, self.embedding_size, padding_idx=self.prod_pad_idx)
+        elif self.args.product_encoder_name == 'word_emb_ll': # The original method
+            self.product_emb = nn.Embedding(product_size+1, self.embedding_size, padding_idx=self.prod_pad_idx)
 
-        if args.sep_prod_emb:
-            self.hist_product_emb = nn.Embedding(product_size+1, self.embedding_size, padding_idx=self.prod_pad_idx)
+            if self.args.sep_prod_emb:
+                self.hist_product_emb = nn.Embedding(product_size+1, self.embedding_size, padding_idx=self.prod_pad_idx)
         '''
         else:
             pretrain_product_emb_path = os.path.join(self.pretrain_up_emb_dir, "product_emb.txt")
@@ -74,20 +85,6 @@ class ItemTransformerRanker(nn.Module):
         self.product_bias = nn.Parameter(torch.zeros(product_size+1), requires_grad=True)
         self.word_bias = nn.Parameter(torch.zeros(vocab_size), requires_grad=True)
 
-        if self.pretrain_emb_dir is not None:
-            word_emb_fname = "word_emb.txt.gz" #for query and target words in pv and pvc
-            pretrain_word_emb_path = os.path.join(self.pretrain_emb_dir, word_emb_fname)
-            word_index_dic, pretrained_weights = load_pretrain_embeddings(pretrain_word_emb_path)
-            word_indices = torch.tensor([0] + [word_index_dic[x] for x in self.vocab_words[1:]] + [self.word_pad_idx])
-            #print(len(word_indices))
-            #print(word_indices.cpu().tolist())
-            pretrained_weights = torch.FloatTensor(pretrained_weights)
-            self.word_embeddings = nn.Embedding.from_pretrained(pretrained_weights[word_indices], padding_idx=self.word_pad_idx)
-            #vectors of padding idx will not be updated
-        else:
-            self.word_embeddings = nn.Embedding(
-                vocab_size, self.embedding_size, padding_idx=self.word_pad_idx)
-
         if self.args.model_name == "item_transformer":
             self.transformer_encoder = TransformerEncoder(
                     self.embedding_size, args.ff_size, args.heads,
@@ -96,10 +93,27 @@ class ItemTransformerRanker(nn.Module):
         else:
             self.attention_encoder = MultiHeadedAttention(args.heads, self.embedding_size, args.dropout)
 
-        if args.query_encoder_name == "fs":
-            self.query_encoder = FSEncoder(self.embedding_size, self.emb_dropout)
-        else:
-            self.query_encoder = AVGEncoder(self.embedding_size, self.emb_dropout)
+        if args.query_encoder_name == "grace_bert_cls":
+            self.query_encoder = GraceBertClsEncoder(self.embedding_size, self.emb_dropout)
+        else:            
+            if self.pretrain_emb_dir is not None:
+                word_emb_fname = "word_emb.txt.gz" #for query and target words in pv and pvc
+                pretrain_word_emb_path = os.path.join(self.pretrain_emb_dir, word_emb_fname)
+                word_index_dic, pretrained_weights = load_pretrain_embeddings(pretrain_word_emb_path)
+                word_indices = torch.tensor([0] + [word_index_dic[x] for x in self.vocab_words[1:]] + [self.word_pad_idx])
+                #print(len(word_indices))
+                #print(word_indices.cpu().tolist())
+                pretrained_weights = torch.FloatTensor(pretrained_weights)
+                self.word_embeddings = nn.Embedding.from_pretrained(pretrained_weights[word_indices], padding_idx=self.word_pad_idx)
+                #vectors of padding idx will not be updated
+            else:
+                self.word_embeddings = nn.Embedding(
+                    vocab_size, self.embedding_size, padding_idx=self.word_pad_idx)
+            
+            if args.query_encoder_name == "fs":
+                self.query_encoder = FSEncoder(self.embedding_size, self.emb_dropout)
+            elif args.query_encoder_name == "avg":
+                self.query_encoder = AVGEncoder(self.embedding_size, self.emb_dropout)
 
         self.seg_embeddings = nn.Embedding(4, self.embedding_size, padding_idx=self.seg_pad_idx)
 
@@ -527,11 +541,16 @@ class ItemTransformerRanker(nn.Module):
         neg_k = self.args.neg_per_pos
 
         pos_iword_idxs = batch_data.pos_iword_idxs
+
         neg_item_idxs = torch.multinomial(self.prod_dists, batch_size * neg_k, replacement=True)
         neg_item_idxs = neg_item_idxs.view(batch_size, -1)
 
-        query_word_emb = self.word_embeddings(query_word_idxs)
-        query_emb = self.query_encoder(query_word_emb, query_word_idxs.ne(self.word_pad_idx))
+        if self.args.query_encoder_name == "grace_bert_cls":
+            query_word_emb = self.word_embeddings(query_word_idxs)
+            query_emb = self.query_encoder(query_word_emb, query_word_idxs.ne(self.word_pad_idx))
+        else:
+            query_word_emb = self.word_embeddings(query_word_idxs)
+            query_emb = self.query_encoder(query_word_emb, query_word_idxs.ne(self.word_pad_idx))
 
         column_mask = torch.ones(batch_size, 1, dtype=torch.uint8, device=query_word_idxs.device)
         u_item_mask = u_item_idxs.ne(self.prod_pad_idx)
@@ -547,13 +566,17 @@ class ItemTransformerRanker(nn.Module):
         #    column_mask.expand(-1, -1, prev_item_count),
         #    column_mask*2], dim = 2)
 
-        target_item_emb = self.product_emb(target_prod_idxs)
-        neg_item_emb = self.product_emb(neg_item_idxs) #batch_size, neg_k, embedding_size
 
-        if self.args.sep_prod_emb:
-            u_item_emb = self.hist_product_emb(u_item_idxs)
+        if self.args.product_encoder_name in ('grace_ate', 'grace_asc'):
+            dd
         else:
-            u_item_emb = self.product_emb(u_item_idxs)
+            target_item_emb = self.product_emb(target_prod_idxs)
+            neg_item_emb = self.product_emb(neg_item_idxs) #batch_size, neg_k, embedding_size
+
+            if self.args.sep_prod_emb:
+                u_item_emb = self.hist_product_emb(u_item_idxs)
+            else:
+                u_item_emb = self.product_emb(u_item_idxs)
 
         #pos_sequence_emb = torch.cat([query_emb.unsqueeze(1), u_item_emb, target_item_emb.unsqueeze(1)], dim=1)
         pos_sequence_emb = torch.cat([query_emb.unsqueeze(1), u_item_emb], dim=1)

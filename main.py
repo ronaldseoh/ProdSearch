@@ -25,27 +25,35 @@ def str2bool(v):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--seed', default=666, type=int)
+    parser.add_argument('--seed', default=696, type=int)
+
     parser.add_argument("--train_from", default='')
     parser.add_argument("--model_name", default='review_transformer',
             choices=['review_transformer', 'item_transformer', 'ZAM', 'AEM', 'QEM'], help="which type of model is used to train")
+
     parser.add_argument("--sep_prod_emb", type=str2bool, nargs='?',const=True,default=False,
             help="whether to use separate embeddings for historical product and the target product")
     parser.add_argument("--pretrain_emb_dir", default='', help="pretrained paragraph and word embeddings")
     parser.add_argument("--pretrain_up_emb_dir", default='', help="pretrained user item embeddings")
     #parser.add_argument("--review_train_mode", type=str, default='random', choices=["random", "prev", "last"]
     #        help="use (sorted) random reviews in training data; reviews before current purchase; reviews that occur at the last in training set for training; ")
+    
+    parser.add_argument("--pretrain_grace_path", default='', help="pretrained GRACE weights")
+    parser.add_argument("--pretrain_grace_cache_dir", default='', help="pretrained GRACE cache dir")
+
     parser.add_argument("--fix_train_review", type=str2bool, nargs='?',const=True,default=False,
             help="fix train reviews (the last reviews in the training set); ")
     parser.add_argument("--do_seq_review_train", type=str2bool, nargs='?',const=True,default=False,
             help="only use reviews before current purchase for training; ")
     parser.add_argument("--do_seq_review_test", type=str2bool, nargs='?',const=True,default=False,
             help="during test time if only training data is available, use the most recent iprev and uprev reviews; if train_review_only is False, use all the sequential reviews available before current review, including validation and test.")
+
     parser.add_argument("--fix_emb", type=str2bool, nargs='?',const=True,default=False,
             help="fix word embeddings or review embeddings during training.")
     parser.add_argument("--use_dot_prod", type=str2bool, nargs='?',const=True,default=True,
             help="use positional embeddings when encoding reviews.")
     parser.add_argument("--sim_func", type=str, default="product", choices=["bias_product", "product", "cosine"], help="similarity computation method.")
+
     parser.add_argument("--use_pos_emb", type=str2bool, nargs='?',const=True,default=True,
             help="use positional embeddings when encoding reviews.")
     parser.add_argument("--use_seg_emb", type=str2bool, nargs='?',const=True,default=True,
@@ -56,6 +64,7 @@ def parse_args():
             help="use item embeddings when encoding review sequence.")
     parser.add_argument("--use_user_emb", type=str2bool, nargs='?',const=True,default=False,
             help="use user embeddings when encoding review sequence.")
+
     parser.add_argument("--rankfname", default="test.best_model.ranklist")
     parser.add_argument("--dropout", default=0.1, type=float)
     parser.add_argument("--token_dropout", default=0.1, type=float)
@@ -101,8 +110,12 @@ def parse_args():
         help="Specify network structure parameters. Please read readme.txt for details.")
 
     parser.add_argument(
-        "--review_encoder_name", type=str, default="pvc", choices=["pv", "pvc", "fs", "avg", "grace_ate", "grace_asc"],
+        "--review_encoder_name", type=str, default="pvc", choices=["pv", "pvc", "fs", "avg"],
         help="Specify network structure parameters. ")
+        
+    parser.add_argument(
+        "--product_encoder_name", type=str, default="word_emb_ll", choices=["word_emb_ll", "grace_ate", "grace_asc"],
+        help="Product embeddings specific to item_transformer")
 
     parser.add_argument("--embedding_size", type=int, default=128, help="Size of each embedding.")
     parser.add_argument("--ff_size", type=int, default=512, help="size of feedforward layers in transformers.")
