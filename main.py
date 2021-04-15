@@ -95,10 +95,15 @@ def parse_args():
     parser.add_argument("--input_train_dir", type=str, default="", help="The directory of training and testing data")
     parser.add_argument("--save_dir", type=str, default="/tmp", help="Model directory & output directory")
     parser.add_argument("--log_file", type=str, default="train.log", help="log file name")
-    parser.add_argument("--query_encoder_name", type=str, default="fs", choices=["fs","avg"],
-            help="Specify network structure parameters. Please read readme.txt for details.")
-    parser.add_argument("--review_encoder_name", type=str, default="pvc", choices=["pv", "pvc", "fs", "avg"],
-            help="Specify network structure parameters. ")
+
+    parser.add_argument(
+        "--query_encoder_name", type=str, default="fs", choices=["fs", "avg", "grace_bert_cls"],
+        help="Specify network structure parameters. Please read readme.txt for details.")
+
+    parser.add_argument(
+        "--review_encoder_name", type=str, default="pvc", choices=["pv", "pvc", "fs", "avg", "grace_ate", "grace_asc"],
+        help="Specify network structure parameters. ")
+
     parser.add_argument("--embedding_size", type=int, default=128, help="Size of each embedding.")
     parser.add_argument("--ff_size", type=int, default=512, help="size of feedforward layers in transformers.")
     parser.add_argument("--heads", default=8, type=int, help="attention heads in transformers")
